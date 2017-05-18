@@ -14,9 +14,8 @@ class cc:
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
 
-
 MSS = 1500
-RETRANSMIT_TIMEOUT = 1 # sec 
+RETRANSMIT_TIMEOUT = 1.5 # sec 
 DUMMY_PAYLOAD = '*' * MSS
 H1_ADDR = '10.0.0.1'
 H1_PORT = 20001
@@ -30,6 +29,8 @@ parser.add_argument('--role', dest='role',
 parser.add_argument('--host', dest='host', 
                     required=True,
                     help="Mininet host (`h1` or `h2`)")
+parser.add_argument('--attack', dest='attack',
+                    help="The receiver attack to implement.")
 
 class TCP_Client:
     def __init__(self, role, host):
@@ -43,7 +44,7 @@ class TCP_Client:
         self.ssthresh = 64 * 1024  # 64KB
         self.dupack = 0
         self.state = "slow_start"
-        # see [RFC 2988] on how the retransmission timer works
+        # see [RFC 6298] on how the retransmission timer works
         self.retransmission_timer = None
 
         self.role = role  # sender or receiver
@@ -128,6 +129,12 @@ class TCP_Client:
             if pkt[scp.TCP].ack - 1 > self.seq:
                 # new ack
                 self.seq = pkt[scp.TCP].ack - 1
+                """
+                [RFC 6298]
+                    (5.3) When an ACK is received that acknowledges new data, 
+                restart the retransmission timer so that it will expire after 
+                RTO seconds (for the current value of RTO).
+                """
                 self.retransmission_timer = time.time()  # restart timer
                 if self.state == "slow_start":
                     self.cwnd += MSS
@@ -140,13 +147,24 @@ class TCP_Client:
             else:
                 # duplicate ack
                 self.dupack += 1
-                if self.state != "fast_recovery" and self.dupack == 3:
+                """
+                [RFC 5681]
+                    On the first and second duplicate ACKs received at a 
+                sender, a TCP SHOULD send a segment of previously unsent data 
+                per [RFC 3042] provided that the receiver's advertised window 
+                allows, the total Flight Size would remain less than or 
+                equal to cwnd plus 2*SMSS, and that new data is available 
+                for transmission.  Further, the TCP sender MUST NOT change 
+                cwnd to reflect these two segments [RFC 3042].
+                """
+                if self.dupack < 3:
+                    self.send()
+                elif self.dupack == 3:
                     self.state = "fast_recovery"
                     self.ssthresh = self.cwnd / 2
                     self.cwnd = self.ssthresh + 3 * MSS
                     # retransmit missing packet
                     self.resend('triple-ack')
-                
                 elif self.state == "fast_recovery":
                     self.cwnd += MSS
 
@@ -169,11 +187,10 @@ class TCP_Client:
             self.receive()
             self.timeout()
             self.log_status()
-
             # log cwnd to file
             ms = time.time() - start_time
-            if ms > last_log_time + 0.01:
-                f.write('%.3f,%d\n' % (ms, self.cwnd))
+            if ms > last_log_time + 0.02:
+                f.write('%.3f,%d,%d\n' % (ms, self.cwnd, self.ssthresh))
                 last_log_time = ms
 
     def start_receiver(self):
