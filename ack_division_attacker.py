@@ -1,19 +1,5 @@
 from naive_tcp import *
 
-def check_num_division(val):
-    ival = int(val)
-    if ival <= 0 or ival > MSS:
-        raise argparse.ArgumentTypeError("%s is an invalid num_division value" % val)
-    return ival
-
-parser = argparse.ArgumentParser(description="ACK Division Attacker.")
-parser.add_argument('--num-division', dest='num_division',
-                    required=True, type=check_num_division,
-                    help="The number of pieces the attacker divides the received ACKs into.")
-parser.add_argument('--host', dest='host',
-                    required=True,
-                    help="Mininet host (`h1` or `h2`)")
-
 class ACK_Division_Attacker(TCP_Client):
     def __init__(self, num_division, host):
         self.last_acked = 0
@@ -56,6 +42,20 @@ class ACK_Division_Attacker(TCP_Client):
         self.start_attack()
 
 if __name__ == "__main__":
+    def check_num_division(val):
+        ival = int(val)
+        if ival <= 0 or ival > MSS:
+            raise argparse.ArgumentTypeError("%s is an invalid num_division value" % val)
+        return ival    
+    parser = argparse.ArgumentParser(description="ACK Division Attacker.")
+    parser.add_argument('--num-division', dest='num_division',
+                        required=True, type=check_num_division,
+                        help="The number of pieces the attacker divides the received\
+                                ACKs into.")
+    parser.add_argument('--host', dest='host',
+                        required=True,
+                        help="Mininet host (`h1` or `h2`)")
+
     args = parser.parse_args()
     attacker = ACK_Division_Attacker(args.num_division, args.host)
     attacker.start()
