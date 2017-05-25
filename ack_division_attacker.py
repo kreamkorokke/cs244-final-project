@@ -14,7 +14,7 @@ parser.add_argument('--host', dest='host',
                     required=True,
                     help="Mininet host (`h1` or `h2`)")
 
-class ACK_Division_Attacker(TCP_Client):
+class ACK_Division_Client(TCP_Client):
     def __init__(self, num_division, host):
         self.last_acked = 0
         self.received_packets = deque()
@@ -36,10 +36,10 @@ class ACK_Division_Attacker(TCP_Client):
         if len(self.received_packets) == 0:
             return
         
-        # For each new data segment, we reply with divided ACKs
+        # For each new data segment, we divide the ACK and reply
         pkt = self.received_packets.popleft()[0]
         new_seq = pkt[scp.TCP].seq
-        if pkt[scp.TCP].flags == 0 and new_seq > self.last_acked:
+        if new_seq > self.last_acked:
             # New data segment received
             payload_len = len(pkt[scp.TCP].payload)
             for i in xrange(self.num_division):
@@ -57,5 +57,5 @@ class ACK_Division_Attacker(TCP_Client):
 
 if __name__ == "__main__":
     args = parser.parse_args()
-    attacker = ACK_Division_Attacker(args.num_division, args.host)
+    attacker = ACK_Division_Client(args.num_division, args.host)
     attacker.start()
