@@ -14,7 +14,7 @@ parser.add_argument('--host', dest='host',
                     required=True,
                     help="Mininet host (`h1` or `h2`)")
 
-class ACK_Division_Client(TCP_Client):
+class ACK_Division_Attacker(TCP_Client):
     def __init__(self, num_division, host):
         self.last_acked = 0
         self.received_packets = deque()
@@ -57,5 +57,5 @@ class ACK_Division_Client(TCP_Client):
 
 if __name__ == "__main__":
     args = parser.parse_args()
-    attacker = ACK_Division_Client(args.num_division, args.host)
+    attacker = ACK_Division_Attacker(args.num_division, args.host)
     attacker.start()
