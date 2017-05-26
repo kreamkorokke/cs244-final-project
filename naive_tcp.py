@@ -6,7 +6,7 @@ import time
 from color import cc
 
 MSS = 1500
-RETRANSMIT_TIMEOUT = 2.0  # sec 
+RETRANSMIT_TIMEOUT = 5.0  # sec 
 DUMMY_PAYLOAD = '*' * MSS
 H1_ADDR = '10.0.0.1'
 H1_PORT = 20001
@@ -172,7 +172,7 @@ class TCP_Client:
                     self.resend('triple-ack')
                 elif self.state == "fast_recovery":
                     self.cwnd += MSS
-          # fin received
+        # fin received
         elif pkt[scp.TCP].flags & 0x1:  # FIN
             self.xprint(cc.OKGREEN + '(received) fin' + cc.ENDC)
             return 'tear_down'
