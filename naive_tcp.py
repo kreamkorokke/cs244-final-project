@@ -3,37 +3,18 @@ import argparse
 import threading
 from collections import deque
 import time
-
-class cc:
-    HEADER = '\033[95m'
-    OKBLUE = '\033[94m'
-    OKGREEN = '\033[92m'
-    WARNING = '\033[93m'
-    FAIL = '\033[91m'
-    ENDC = '\033[0m'
-    BOLD = '\033[1m'
-    UNDERLINE = '\033[4m'
+from color import cc
 
 MSS = 1500
-RETRANSMIT_TIMEOUT = 1.5 # sec 
+RETRANSMIT_TIMEOUT = 2.0  # sec 
 DUMMY_PAYLOAD = '*' * MSS
 H1_ADDR = '10.0.0.1'
 H1_PORT = 20001
 H2_ADDR = '10.0.0.2'
 H2_PORT = 20002
 
-parser = argparse.ArgumentParser(description="Naive TCP.")
-parser.add_argument('--role', dest='role', 
-                    required=True,
-                    help="The role of the TCP client (`sender` or `receiver`)")
-parser.add_argument('--host', dest='host', 
-                    required=True,
-                    help="Mininet host (`h1` or `h2`)")
-parser.add_argument('--attack', dest='attack',
-                    help="The receiver attack to implement.")
-
-class TCP_Client:
-    def __init__(self, role, host):
+class TCP_Client:   
+    def __init__(self, role, host, **kwargs):
         self.seq = 0
         self.next_seq = 1
         self.ack = 1
@@ -62,7 +43,14 @@ class TCP_Client:
             self.src_port = H2_PORT
             self.dst_port = H1_PORT
 
+        self.limit = None
+        # stop the sender after seq_no exceeding this limit
+        if role == 'sender' and 'limit' in kwargs:
+            self.limit = kwargs['limit']
+
     def send(self):
+        if self.limit and self.next_seq > self.limit:
+            return
         packet = scp.IP(src=self.src_ip, dst=self.dst_ip) \
                  / scp.TCP(sport=self.src_port, dport=self.dst_port, 
                            flags='', seq=self.next_seq) \
@@ -71,9 +59,9 @@ class TCP_Client:
         self.next_seq += MSS
         if self.retransmission_timer is None:
             self.retransmission_timer = time.time()
-        print cc.OKBLUE + '(sent) data seq=%d:%d' % \
+        self.xprint(cc.OKBLUE + '(sent) data seq=%d:%d' % \
                 (packet[scp.TCP].seq, packet[scp.TCP].seq + MSS - 1) \
-                + cc.ENDC
+                + cc.ENDC)
 
     def resend(self, event):
         packet = scp.IP(src=self.src_ip, dst=self.dst_ip) \
@@ -82,16 +70,23 @@ class TCP_Client:
                  / (DUMMY_PAYLOAD)
         self.retransmission_timer = time.time()
         scp.send(packet, verbose=0)
-        print cc.WARNING + '(resent:%s) data seq=%d:%d' % \
+        self.xprint(cc.WARNING + '(resent:%s) data seq=%d:%d' % \
                  (event, packet[scp.TCP].seq, packet[scp.TCP].seq + MSS - 1) \
-                 + cc.ENDC
+                 + cc.ENDC)
 
     def send_ack(self, ack_no):
         packet = scp.IP(src=self.src_ip, dst=self.dst_ip) \
                  / scp.TCP(sport=self.src_port, dport=self.dst_port, 
                            flags='A', ack=ack_no) 
         scp.send(packet, verbose=0)
-        print cc.OKBLUE + '(sent) ack ack=%d' % ack_no + cc.ENDC
+        self.xprint(cc.OKBLUE + '(sent) ack ack=%d' % ack_no + cc.ENDC)
+
+    def send_fin(self):
+        packet = scp.IP(src=self.src_ip, dst=self.dst_ip) \
+                 / scp.TCP(sport=self.src_port, dport=self.dst_port,
+                           flags='F')
+        scp.send(packet, verbose=0)
+        self.xprint(cc.OKBLUE + '(sent) fin limit=%d' % self.limit + cc.ENDC)
 
     def timeout(self):
         if self.retransmission_timer is None:
@@ -104,28 +99,38 @@ class TCP_Client:
             self.cwnd = 1 * MSS
             self.dupack = 0
 
+    def post_receive(self, pkt, status):
+        # called after a data segment is received
+        # subclass overwrites this function to implement attacks
+        self.send_ack(self.ack)
+
     def receive(self):
         if len(self.received_packets) == 0:
             return
         pkt = self.received_packets.popleft()[0]
         # data packet received
         if pkt[scp.TCP].flags == 0:
-            print cc.OKGREEN + '(received) data seq=%d:%d' % \
+            self.xprint(cc.OKGREEN + '(received) data seq=%d:%d' % \
                     (pkt[scp.TCP].seq, pkt[scp.TCP].seq + MSS - 1) \
-                    + cc.ENDC
+                    + cc.ENDC)
             if pkt[scp.TCP].seq == self.ack:
+                status = 'new'
                 self.ack += MSS
                 while self.ack in self.outstanding_segments:
                     self.outstanding_segments.remove(self.ack)
                     self.ack += MSS
             elif pkt[scp.TCP].seq > self.ack:
                 # a future packet (queue it)
+                status = 'future'
                 self.outstanding_segments.add(pkt[scp.TCP].seq)
-            self.send_ack(self.ack)
+            else:
+                status = 'duplicate'
+            self.post_receive(pkt, status)
         # ack received
         elif pkt[scp.TCP].flags & 0x10:  # ACK
-            print cc.OKGREEN + '(received) ack ack=:%d' % (pkt[scp.TCP].ack - 1) \
-                    + cc.ENDC
+            self.xprint(cc.OKGREEN + '(received) ack ack=:%d' % \
+                    (pkt[scp.TCP].ack - 1) \
+                    + cc.ENDC)
             if pkt[scp.TCP].ack - 1 > self.seq:
                 # new ack
                 self.seq = pkt[scp.TCP].ack - 1
@@ -167,16 +172,23 @@ class TCP_Client:
                     self.resend('triple-ack')
                 elif self.state == "fast_recovery":
                     self.cwnd += MSS
+          # fin received
+        elif pkt[scp.TCP].flags & 0x1:  # FIN
+            self.xprint(cc.OKGREEN + '(received) fin' + cc.ENDC)
+            return 'tear_down'
 
     def log_status(self):
-        out = '(log) state=%s cwnd=%d, ssthread=%d' % \
+        out = '(control:%s) cwnd=%d, ssthread=%d' % \
                 (self.state, self.cwnd, self.ssthresh)
         if out != self.log_cache:
-            print out
+            self.xprint(out)
             self.log_cache = out
 
+    def xprint(self, content):
+        timestamp = time.time() - self.base_time
+        print cc.BOLD + '{:6.3f} '.format(timestamp) + cc.ENDC + content
+
     def start_sender(self):
-        f = open('cwnd.txt', 'w')
         start_time = time.time()
         last_log_time = 0
         while True:
@@ -187,15 +199,15 @@ class TCP_Client:
             self.receive()
             self.timeout()
             self.log_status()
-            # log cwnd to file
-            ms = time.time() - start_time
-            if ms > last_log_time + 0.02:
-                f.write('%.3f,%d,%d\n' % (ms, self.cwnd, self.ssthresh))
-                last_log_time = ms
+
+            if self.limit and self.seq >= self.limit:
+              self.send_fin()
+              break
 
     def start_receiver(self):
         while True:
-            self.receive()
+          if self.receive() == 'tear_down':
+            break
 
     def listen(self):
         def match_packet(pkt):
@@ -212,13 +224,33 @@ class TCP_Client:
 
     def start(self):
         listen_t = threading.Thread(target=self.listen)
+        # set it to daemon so that it will be killed when the main thread
+        # exits
+        listen_t.daemon = True
         listen_t.start()
+        self.base_time = time.time()
+        print cc.BOLD + ' 0.   ' + cc.ENDC + ' T = %.3f' % self.base_time
         if self.role == 'sender':
             self.start_sender()
         if self.role == 'receiver':
             self.start_receiver()
+        self.xprint('connection terminated')
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Naive TCP.")
+    parser.add_argument('--role', dest='role', 
+                        required=True,
+                        help="The role of the TCP client (`sender` or `receiver`)")
+    parser.add_argument('--host', dest='host', 
+                        required=True,
+                        help="Mininet host (`h1` or `h2`)")
+    parser.add_argument('--limit', dest='limit', type=int,
+                        help="Limit the total amount of data to send (in kB).")
     args = parser.parse_args()
-    tcp = TCP_Client(args.role, args.host)
+    
+    kwargs = {}
+    if args.limit is not None:
+      kwargs['limit'] = args.limit * 1000
+
+    tcp = TCP_Client(args.role, args.host, **kwargs)
     tcp.start()
