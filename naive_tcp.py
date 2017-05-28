@@ -1,3 +1,7 @@
+# Suppresses Scapy runtime warning
+import logging
+logging.getLogger("scapy.runtime").setLevel(logging.ERROR)
+
 from scapy import all as scp
 import argparse
 import threading
@@ -47,6 +51,7 @@ class TCP_Client:
         # stop the sender after seq_no exceeding this limit
         if role == 'sender' and 'limit' in kwargs:
             self.limit = kwargs['limit']
+        self.verbose = kwargs['verbose']
 
     def send(self):
         if self.limit and self.next_seq > self.limit:
@@ -185,6 +190,7 @@ class TCP_Client:
             self.log_cache = out
 
     def xprint(self, content):
+        if not self.verbose: return
         timestamp = time.time() - self.base_time
         print cc.BOLD + '{:6.3f} '.format(timestamp) + cc.ENDC + content
 
@@ -229,12 +235,21 @@ class TCP_Client:
         listen_t.daemon = True
         listen_t.start()
         self.base_time = time.time()
-        print cc.BOLD + ' 0.   ' + cc.ENDC + ' T = %.3f' % self.base_time
+        self.xprint('connection started')
+#        print cc.BOLD + ' 0.   ' + cc.ENDC + ' T = %.3f' % self.base_time
         if self.role == 'sender':
             self.start_sender()
         if self.role == 'receiver':
             self.start_receiver()
         self.xprint('connection terminated')
+
+def check_bool(val):
+    if val.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif val.lower() in ('no', 'false', 'f' ,'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Naive TCP.")
@@ -246,11 +261,14 @@ if __name__ == "__main__":
                         help="Mininet host (`h1` or `h2`)")
     parser.add_argument('--limit', dest='limit', type=int,
                         help="Limit the total amount of data to send (in kB).")
+    parser.add_argument("--verbose", dest='verbose', type=check_bool, nargs='?', const=True,
+                        help="Verbose flag for TCP communication log.")
     args = parser.parse_args()
     
     kwargs = {}
     if args.limit is not None:
       kwargs['limit'] = args.limit * 1000
+    kwargs['verbose'] = args.verbose
 
     tcp = TCP_Client(args.role, args.host, **kwargs)
     tcp.start()

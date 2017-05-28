@@ -2,8 +2,8 @@ from naive_tcp import *
 import time
 
 class ACK_Division_Attacker(TCP_Client):
-    def __init__(self, num, host):
-        TCP_Client.__init__(self, 'receiver', host)
+    def __init__(self, num, host, **kwargs):
+        TCP_Client.__init__(self, 'receiver', host, **kwargs)
         self.num_division = num
     
     def post_receive(self, pkt, status):
@@ -17,8 +17,8 @@ class ACK_Division_Attacker(TCP_Client):
             TCP_Client.post_receive(self, pkt, status)
 
 class DupACK_Spoofing_Attacker(TCP_Client):
-    def __init__(self, num, host):
-        TCP_Client.__init__(self, 'receiver', host)
+    def __init__(self, num, host, **kwargs):
+        TCP_Client.__init__(self, 'receiver', host, **kwargs)
         self.num_dupacks = num
 
     def post_receive(self, pkt, status):
@@ -29,8 +29,8 @@ class DupACK_Spoofing_Attacker(TCP_Client):
             TCP_Client.post_receive(self, pkt, status)
 
 class Optimistic_ACKing_Attacker(TCP_Client):
-    def __init__(self, num, interval, host):
-        TCP_Client.__init__(self, 'receiver', host)
+    def __init__(self, num, interval, host, **kwargs):
+        TCP_Client.__init__(self, 'receiver', host, **kwargs)
         self.num_optacks = num
         self.ack_interval = interval
     
@@ -64,6 +64,8 @@ def parse_args():
                 first data segment")
     parser.add_argument('--interval', dest='interval', type=int,
         help="Time interval between sending optimistic ACKs (in milliseconds).")
+    parser.add_argument("--verbose", dest='verbose', type=check_bool, nargs='?', const=True,
+        help="Verbose flag for TCP communication log.")
 
     args = parser.parse_args()
     if args.attack == 'opt' and args.interval is None:
@@ -74,11 +76,12 @@ def parse_args():
 if __name__ == "__main__":
     args = parse_args()
 
+    kwargs = {'verbose': args.verbose}
     if args.attack == 'div':
-        attacker = ACK_Division_Attacker(args.num, args.host)
+        attacker = ACK_Division_Attacker(args.num, args.host, **kwargs)
     if args.attack == 'dup':
-        attacker = DupACK_Spoofing_Attacker(args.num, args.host)
+        attacker = DupACK_Spoofing_Attacker(args.num, args.host, **kwargs)
     if args.attack == 'opt':
-        attacker = Optimistic_ACKing_Attacker(args.num, args.interval, args.host) 
+        attacker = Optimistic_ACKing_Attacker(args.num, args.interval, args.host, **kwargs) 
     
     attacker.start()
