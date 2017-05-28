@@ -10,12 +10,13 @@ import time
 from color import cc
 
 MSS = 1500
-RETRANSMIT_TIMEOUT = 5.0  # sec 
+RETRANSMIT_TIMEOUT = 5.0  # sec
 DUMMY_PAYLOAD = '*' * MSS
 H1_ADDR = '10.0.0.1'
 H1_PORT = 20001
 H2_ADDR = '10.0.0.2'
 H2_PORT = 20002
+LOG_SEQ_INTERVAL = 0.01
 
 class TCP_Client:   
     def __init__(self, role, host, **kwargs):
@@ -49,8 +50,12 @@ class TCP_Client:
 
         self.limit = None
         # stop the sender after seq_no exceeding this limit
-        if role == 'sender' and 'limit' in kwargs:
-            self.limit = kwargs['limit']
+        if role == 'sender':
+            if 'limit' in kwargs:
+                self.limit = kwargs['limit']
+            self.log_attacker = kwargs['log_attacker']
+            self.log_seq_interval = LOG_SEQ_INTERVAL
+        # Verbose flag
         self.verbose = kwargs['verbose']
 
     def send(self):
@@ -208,11 +213,13 @@ class TCP_Client:
 
             if self.limit and self.seq >= self.limit:
               self.send_fin()
+              self.state = 'tear_down'
               break
 
     def start_receiver(self):
         while True:
           if self.receive() == 'tear_down':
+            self.state = 'tear_down'
             break
 
     def listen(self):
@@ -228,19 +235,45 @@ class TCP_Client:
             self.received_packets.append((pkt, time.time()))
         scp.sniff(lfilter=match_packet, prn=queue_packet)
 
+    def log_seq_num(self):
+        filename = 'seq_num_attack.txt' if self.log_attacker else 'seq_num.txt'
+        f = open(filename, 'w')
+        start_time = time.time()
+        last_log_time = 0
+        while True:
+            diff = time.time() - start_time
+            if diff > last_log_time + self.log_seq_interval:
+                f.write('%.3f,%d\n' % (diff, self.seq))
+                last_log_time = diff
+            if self.state == 'tear_down':
+                break
+        f.close()
+
     def start(self):
         listen_t = threading.Thread(target=self.listen)
         # set it to daemon so that it will be killed when the main thread
         # exits
         listen_t.daemon = True
         listen_t.start()
+        # Seq num logging
+        if self.role == 'sender':
+            logseq_t = threading.Thread(target=self.log_seq_num)
+            logseq_t.daemon = True
+            logseq_t.start()
+
         self.base_time = time.time()
         self.xprint('connection started')
-#        print cc.BOLD + ' 0.   ' + cc.ENDC + ' T = %.3f' % self.base_time
         if self.role == 'sender':
             self.start_sender()
         if self.role == 'receiver':
             self.start_receiver()
+
+        # Join spawned threads
+        if self.role == 'sender':
+            logseq_t.join()
+        # Here listen_t is intentionally not joined since Scapy
+        # requires receiving new packets to stop sniff(), and this is
+        # a problem for sender
         self.xprint('connection terminated')
 
 def check_bool(val):
@@ -261,14 +294,19 @@ if __name__ == "__main__":
                         help="Mininet host (`h1` or `h2`)")
     parser.add_argument('--limit', dest='limit', type=int,
                         help="Limit the total amount of data to send (in kB).")
-    parser.add_argument("--verbose", dest='verbose', type=check_bool, nargs='?', const=True,
+    parser.add_argument("--verbose", dest='verbose', type=check_bool,
+                        nargs='?', const=True,
                         help="Verbose flag for TCP communication log.")
+    parser.add_argument("--log-attacker", dest='log_attacker', type=check_bool,
+                        nargs='?', const=False,
+                        help="Flag for logging seq num under attack.")
     args = parser.parse_args()
     
     kwargs = {}
     if args.limit is not None:
       kwargs['limit'] = args.limit * 1000
     kwargs['verbose'] = args.verbose
+    kwargs['log_attacker'] = args.log_attacker
 
     tcp = TCP_Client(args.role, args.host, **kwargs)
     tcp.start()
