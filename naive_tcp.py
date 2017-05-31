@@ -243,7 +243,7 @@ class TCP_Client:
         while True:
             diff = time.time() - start_time
             if diff > last_log_time + self.log_seq_interval:
-                f.write('%.3f,%d\n' % (diff, self.seq))
+                f.write('%.3f,%d\n' % (diff, self.next_seq))
                 last_log_time = diff
             if self.state == 'tear_down':
                 break
