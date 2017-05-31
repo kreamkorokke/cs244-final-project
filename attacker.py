@@ -45,16 +45,16 @@ class Optimistic_ACKing_Attacker(TCP_Client):
             TCP_Client.post_receive(self, pkt, status)
 
 
+def check_attack_type(val):
+    if val not in ['div', 'dup', 'opt']:
+        raise argparse.ArgumentTypeError("%s is an invalid attack name." % val)
+    return val
+
 def parse_args():
     parser = argparse.ArgumentParser(description= \
             "TCP malicious receiver (attack implementations).")
     parser.add_argument('--host', dest='host', 
-                        required=True, help="Mininet host (`h1` or `h2`)")
-    
-    def check_attack_type(val):
-        if val not in ['div', 'dup', 'opt']:
-            raise argparse.ArgumentTypeError("%s is an invalid attack name." % val)
-        return val
+                        required=True, help="Mininet host (`h1` or `h2`)")    
     parser.add_argument('--attack', dest='attack', required=True,
         type=check_attack_type,
         help="The receiver attack to implement (`div`, `dup`, or `opt`).")
