@@ -86,11 +86,11 @@ class TCP_Client:
 
     def send_ack(self, ack_no):
         # update ack log
-        self.ack_log.append((time.time() - self.base_time, ack_no))
         packet = scp.IP(src=self.src_ip, dst=self.dst_ip) \
                  / scp.TCP(sport=self.src_port, dport=self.dst_port, 
                            flags='A', ack=ack_no) 
         scp.send(packet, verbose=0)
+        self.ack_log.append((time.time() - self.base_time, ack_no))
         self.xprint(cc.OKBLUE + '(sent) ack ack=%d' % ack_no + cc.ENDC)
 
     def send_fin(self):
