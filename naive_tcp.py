@@ -16,7 +16,6 @@ H1_ADDR = '10.0.0.1'
 H1_PORT = 20001
 H2_ADDR = '10.0.0.2'
 H2_PORT = 20002
-LOG_SEQ_INTERVAL = 0.01
 
 class TCP_Client:   
     def __init__(self, role, host, **kwargs):
@@ -53,8 +52,9 @@ class TCP_Client:
         if role == 'sender':
             if 'limit' in kwargs:
                 self.limit = kwargs['limit']
-            self.log_attacker = kwargs['log_attacker']
-            self.log_seq_interval = LOG_SEQ_INTERVAL
+        # list of time logs for plotting
+        self.seq_log, self.ack_log = [], []
+        self.log_attacker = False
         # Verbose flag
         self.verbose = kwargs['verbose']
 
@@ -85,6 +85,8 @@ class TCP_Client:
                  + cc.ENDC)
 
     def send_ack(self, ack_no):
+        # update ack log
+        self.ack_log.append((time.time() - self.base_time, ack_no))
         packet = scp.IP(src=self.src_ip, dst=self.dst_ip) \
                  / scp.TCP(sport=self.src_port, dport=self.dst_port, 
                            flags='A', ack=ack_no) 
@@ -120,6 +122,8 @@ class TCP_Client:
         pkt = self.received_packets.popleft()[0]
         # data packet received
         if pkt[scp.TCP].flags == 0:
+            # update seq log
+            self.seq_log.append((time.time() - self.base_time, pkt[scp.TCP].seq))
             self.xprint(cc.OKGREEN + '(received) data seq=%d:%d' % \
                     (pkt[scp.TCP].seq, pkt[scp.TCP].seq + MSS - 1) \
                     + cc.ENDC)
@@ -235,18 +239,13 @@ class TCP_Client:
             self.received_packets.append((pkt, time.time()))
         scp.sniff(lfilter=match_packet, prn=queue_packet)
 
-    def log_seq_num(self):
-        filename = 'seq_num_attack.txt' if self.log_attacker else 'seq_num.txt'
+    def write_logs_to_files(self):
+        filename = 'attack_log.txt' if self.log_attacker else 'log.txt'
         f = open(filename, 'w')
-        start_time = time.time()
-        last_log_time = 0
-        while True:
-            diff = time.time() - start_time
-            if diff > last_log_time + self.log_seq_interval:
-                f.write('%.3f,%d\n' % (diff, self.next_seq))
-                last_log_time = diff
-            if self.state == 'tear_down':
-                break
+        for time, seq in self.seq_log:
+            f.write('%s,%.3f,%d\n' % ('seq', time, seq))
+        for time, ack in self.ack_log:
+            f.write('%s,%.3f,%d\n' % ('ack', time, ack))
         f.close()
 
     def start(self):
@@ -255,11 +254,6 @@ class TCP_Client:
         # exits
         listen_t.daemon = True
         listen_t.start()
-        # Seq num logging
-        if self.role == 'sender':
-            logseq_t = threading.Thread(target=self.log_seq_num)
-            logseq_t.daemon = True
-            logseq_t.start()
 
         self.base_time = time.time()
         self.xprint('connection started')
@@ -268,13 +262,11 @@ class TCP_Client:
         if self.role == 'receiver':
             self.start_receiver()
 
-        # Join spawned threads
-        if self.role == 'sender':
-            logseq_t.join()
-        # Here listen_t is intentionally not joined since Scapy
-        # requires receiving new packets to stop sniff(), and this is
-        # a problem for sender
         self.xprint('connection terminated')
+        if self.role == 'receiver':
+            self.xprint('writing seq/ack logs to files...')
+            self.write_logs_to_files()
+            self.xprint('writing logs done!')
 
 def check_bool(val):
     if val.lower() in ('yes', 'true', 't', 'y', '1'):
@@ -297,16 +289,12 @@ if __name__ == "__main__":
     parser.add_argument("--verbose", dest='verbose', type=check_bool,
                         nargs='?', const=True,
                         help="Verbose flag for TCP communication log.")
-    parser.add_argument("--log-attacker", dest='log_attacker', type=check_bool,
-                        nargs='?', const=False,
-                        help="Flag for logging seq num under attack.")
     args = parser.parse_args()
     
     kwargs = {}
     if args.limit is not None:
       kwargs['limit'] = args.limit * 1000
     kwargs['verbose'] = args.verbose
-    kwargs['log_attacker'] = args.log_attacker
 
     tcp = TCP_Client(args.role, args.host, **kwargs)
     tcp.start()

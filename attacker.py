@@ -5,6 +5,7 @@ class ACK_Division_Attacker(TCP_Client):
     def __init__(self, num, host, **kwargs):
         TCP_Client.__init__(self, 'receiver', host, **kwargs)
         self.num_division = num
+        self.log_attacker = True
     
     def post_receive(self, pkt, status):
         if pkt[scp.TCP].seq == 1:
@@ -20,6 +21,7 @@ class DupACK_Spoofing_Attacker(TCP_Client):
     def __init__(self, num, host, **kwargs):
         TCP_Client.__init__(self, 'receiver', host, **kwargs)
         self.num_dupacks = num
+        self.log_attacker = True
 
     def post_receive(self, pkt, status):
         if pkt[scp.TCP].seq == 1:
@@ -33,6 +35,7 @@ class Optimistic_ACKing_Attacker(TCP_Client):
         TCP_Client.__init__(self, 'receiver', host, **kwargs)
         self.num_optacks = num
         self.ack_interval = interval
+        self.log_attacker = True
     
     def post_receive(self, pkt, status):
         cur_ack_no = 1
