@@ -10,7 +10,12 @@ class ACK_Division_Attacker(TCP_Client):
     def post_receive(self, pkt, status):
         if pkt[scp.TCP].seq == 1:
             new_seq = pkt[scp.TCP].seq
-            payload_len = len(pkt[scp.TCP].payload)
+            """
+            If the sender includes a NONCE header, the payload increases by
+            8 bytes. We ignore the NONCE header by capping payload_len to
+            MSS.
+            """
+            payload_len = min(MSS, len(pkt[scp.TCP].payload))
             cur_ack_no = new_seq
             for i in xrange(self.num_division):
                 if i == self.num_division - 1:
