@@ -9,7 +9,7 @@ from collections import deque
 import time
 from color import cc
 
-MSS = 1500
+MSS = 1400
 RETRANSMIT_TIMEOUT = 2.0  # sec
 DUMMY_PAYLOAD = '*' * MSS
 H1_ADDR = '10.0.0.1'
@@ -213,7 +213,7 @@ class TCP_Client:
         print cc.BOLD + '{:6.3f} '.format(timestamp) + cc.ENDC + content
 
     def start_sender(self):
-        start_time = time.time()
+        self.xprint("retransmission timeout: %.1fs" % RETRANSMIT_TIMEOUT)
         last_log_time = 0
         while True:
             if self.state == "slow_start" and self.cwnd >= self.ssthresh:
@@ -298,6 +298,8 @@ if __name__ == "__main__":
     parser.add_argument('--host', dest='host', 
                         required=True,
                         help="Mininet host (`h1` or `h2`)")
+    parser.add_argument('--rtt', dest='rtt', type=int,
+                        help="The estimated RTT specified in Mininet (in ms).")
     parser.add_argument('--limit', dest='limit', type=int,
                         help="Limit the total amount of data to send (in kB).")
     parser.add_argument('--verbose', dest='verbose', action='store_true',
@@ -308,6 +310,10 @@ if __name__ == "__main__":
     if args.limit is not None:
       kwargs['limit'] = args.limit * 1000
     kwargs['verbose'] = args.verbose
+
+    if args.rtt is not None:
+        # set retransmission timeout to 4 * RTT
+        RETRANSMIT_TIMEOUT = max(1.0, args.rtt / 250.)
 
     tcp = TCP_Client(args.role, args.host, **kwargs)
     tcp.start()

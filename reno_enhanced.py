@@ -10,7 +10,7 @@ import time
 from color import cc
 import random
 
-MSS = 1500
+MSS = 1400
 RETRANSMIT_TIMEOUT = 2.0  # sec
 DUMMY_PAYLOAD = '*' * MSS
 H1_ADDR = '10.0.0.1'
@@ -186,29 +186,39 @@ class TCP_Client:
             self.post_receive(pkt, status)
         # ack received
         elif pkt[scp.TCP].flags & 0x10:  # ACK
-            self.xprint(cc.OKGREEN + '(received) ack ack=:%d' % \
-                    (pkt[scp.TCP].ack - 1) \
-                    + cc.ENDC)
+            is_ack_valid = True
 
             # [defense against ACK division]
             # reject non-aligned acks
             if (pkt[scp.TCP].ack - 1) % MSS != 0:
-                return
+                is_ack_valid = False
 
             # [defense against DupACK spoofing and Optimistic ACKing]
             # reject ACK with invalid nonce
-            if not pkt.haslayer(Nonce):
-                return
-            nonce_reply = pkt[Nonce].reply
-            nonce_cnt   = self.nonce_pool.get(nonce_reply, 0)
-            if nonce_cnt == 0:
-                return
+            elif not pkt.haslayer(Nonce):
+                is_ack_valid = False
+
             else:
-                # remove nonce from nonce_pool
-                if nonce_cnt == 1:
-                  del self.nonce_pool[nonce_reply]
+                nonce_reply = pkt[Nonce].reply
+                nonce_cnt   = self.nonce_pool.get(nonce_reply, 0)
+                if nonce_cnt == 0:
+                    is_ack_valid = False
                 else:
-                  self.nonce_pool[nonce_reply] = nonce_cnt - 1
+                    # remove nonce from nonce_pool
+                    if nonce_cnt == 1:
+                      del self.nonce_pool[nonce_reply]
+                    else:
+                      self.nonce_pool[nonce_reply] = nonce_cnt - 1
+
+            if is_ack_valid:
+                self.xprint(cc.OKGREEN + '(received) ack ack=:%d' % \
+                        (pkt[scp.TCP].ack - 1) \
+                        + cc.ENDC)
+            else:
+                self.xprint(cc.FAIL + '(received) invalid ack ack=:%d' % \
+                        (pkt[scp.TCP].ack - 1) \
+                        + cc.ENDC)
+                return
 
             if pkt[scp.TCP].ack - 1 > self.seq:
                 # new ack
@@ -280,7 +290,7 @@ class TCP_Client:
         print cc.BOLD + '{:6.3f} '.format(timestamp) + cc.ENDC + content
 
     def start_sender(self):
-        start_time = time.time()
+        self.xprint("retransmission timeout: %.1fs" % RETRANSMIT_TIMEOUT)
         last_log_time = 0
         while True:
             if self.state == "slow_start" and self.cwnd >= self.ssthresh:
@@ -365,6 +375,8 @@ if __name__ == "__main__":
     parser.add_argument('--host', dest='host', 
                         required=True,
                         help="Mininet host (`h1` or `h2`)")
+    parser.add_argument('--rtt', dest='rtt', type=int,
+                        help="The estimated RTT specified in Mininet (in ms).")
     parser.add_argument('--limit', dest='limit', type=int,
                         help="Limit the total amount of data to send (in kB).")
     parser.add_argument('--verbose', dest='verbose', action='store_true',
@@ -376,5 +388,9 @@ if __name__ == "__main__":
       kwargs['limit'] = args.limit * 1000
     kwargs['verbose'] = args.verbose
 
+    if args.rtt is not None:
+        # set retransmission timeout to 4 * RTT
+        RETRANSMIT_TIMEOUT = max(1.0, args.rtt / 250.)
+    
     tcp = TCP_Client(args.role, args.host, **kwargs)
     tcp.start()
