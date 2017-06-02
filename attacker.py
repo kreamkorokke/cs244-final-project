@@ -11,11 +11,13 @@ class ACK_Division_Attacker(TCP_Client):
         if pkt[scp.TCP].seq == 1:
             new_seq = pkt[scp.TCP].seq
             payload_len = len(pkt[scp.TCP].payload)
-            print(payload_len)
-            print(payload_len / self.num_division)
+            cur_ack_no = new_seq
             for i in xrange(self.num_division):
-                ack_no = new_seq + (i+1) * (payload_len / self.num_division)
-                self.send_ack(ack_no)
+                if i == self.num_division - 1:
+                    cur_ack_no = new_seq + payload_len
+                else:
+                    cur_ack_no = cur_ack_no + payload_len / self.num_division
+                self.send_ack(cur_ack_no)
         else:
             TCP_Client.post_receive(self, pkt, status)
 
