@@ -1,4 +1,4 @@
-from naive_tcp import *
+from reno import *
 import time
 
 class ACK_Division_Attacker(TCP_Client):
