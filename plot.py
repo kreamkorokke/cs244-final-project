@@ -1,7 +1,6 @@
 import os
 import matplotlib.pyplot as plt
 import argparse
-from naive_tcp import check_bool
 from attacker import check_attack_type
 
 IMG_DIR = "./plots"
@@ -21,14 +20,16 @@ def read_lines(f, d):
 
 def main():
     parser = argparse.ArgumentParser(description="Plot script for plotting sequence numbers.")
-    parser.add_argument('--save', dest='save_imgs',
-                        nargs='?', const=False, type=check_bool,
-                        help="Set this to true to save images under %s." % IMG_DIR)
+    parser.add_argument('--save', dest='save_imgs', action='store_true',
+                        help="Set this to true to save images under specified output directory.")
     parser.add_argument('--attack', dest='attack',
                         nargs='?', const="", type=check_attack_type,
                         help="Attack name (used in plot names).")
+    parser.add_argument('--output', dest='output_dir', default=IMG_DIR,
+                        help="Directory to store plots.")
     args = parser.parse_args()
     save_imgs = args.save_imgs
+    output_dir = args.output_dir
     attack_name = args.attack
 
     if save_imgs and attack_name not in ['div', 'dup', 'opt'] :
@@ -38,7 +39,7 @@ def main():
     normal_log = {'seq':{'time':[], 'num':[]}, 'ack':{'time':[], 'num':[]}}
     attack_log = {'seq':{'time':[], 'num':[]}, 'ack':{'time':[], 'num':[]}}
     normal_f = open('log.txt', 'r')
-    attack_f = open('attack_log.txt', 'r')
+    attack_f = open('%s_attack_log.txt' % attack_name, 'r')
     
     read_lines(normal_f, normal_log)
     read_lines(attack_f, attack_log)
@@ -69,9 +70,9 @@ def main():
 
     if save_imgs:
         # Save images to figure/
-        if not os.path.exists(IMG_DIR):
-            os.makedirs(IMG_DIR)
-        plt.savefig(IMG_DIR + "/" + attack_name)
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+        plt.savefig(output_dir + "/" + attack_name)
     else:
         plt.show()
     
