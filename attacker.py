@@ -67,7 +67,8 @@ def parse_args():
                 first data segment")
     parser.add_argument('--interval', dest='interval', type=int,
         help="Time interval between sending optimistic ACKs (in milliseconds).")
-    parser.add_argument("--verbose", dest='verbose', type=check_bool, nargs='?', const=True,
+
+    parser.add_argument("--verbose", dest='verbose', action='store_true',
         help="Verbose flag for TCP communication log.")
 
     args = parser.parse_args()

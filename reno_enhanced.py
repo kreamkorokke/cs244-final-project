@@ -8,14 +8,20 @@ import threading
 from collections import deque
 import time
 from color import cc
+import random
 
 MSS = 1500
-RETRANSMIT_TIMEOUT = 5.0  # sec
+RETRANSMIT_TIMEOUT = 2.0  # sec
 DUMMY_PAYLOAD = '*' * MSS
 H1_ADDR = '10.0.0.1'
 H1_PORT = 20001
 H2_ADDR = '10.0.0.2'
 H2_PORT = 20002
+
+class Nonce(scp.Packet):
+    name = "Nonce"
+    fields_desc = [scp.IntField("nonce", 0), 
+                   scp.IntField("reply", 0)]
 
 class TCP_Client:   
     def __init__(self, role, host, **kwargs):
@@ -58,12 +64,39 @@ class TCP_Client:
         # verbose flag
         self.verbose = kwargs['verbose']
 
+        """
+        [defense against DupACK spoofing and Optimistic ACKing]
+          We use the "Singular Nonce" technique described in section 4.3.
+        For each data segment that we send, we include a random 32-bit
+        nonce. An ACK is only valid if it contains one of these nonces.
+        When we receive a valid ACK, we remove the nonce it replies from
+        the nonce pool.
+        Therefore, DupACK spoofing or Optimistic ACKing are no longer
+        viable because no more spoofed ACKs can be created a priori than
+        there are actual data segments sent.
+        """
+        self.nonce_pool = {}
+        
+        # seed the pseudorandom generator
+        random.seed()
+
+        # bind Nonce to TCP so that scapy can decode Nonce layer
+        scp.bind_layers(scp.TCP, Nonce, dport=H1_PORT)
+        scp.bind_layers(scp.TCP, Nonce, dport=H2_PORT)
+
+
+    def get_nonce(self):
+        nonce = random.getrandbits(32)
+        self.nonce_pool[nonce] = self.nonce_pool.get(nonce, 0) + 1
+        return nonce
+
     def send(self):
         if self.limit and self.next_seq > self.limit:
             return
         packet = scp.IP(src=self.src_ip, dst=self.dst_ip) \
                  / scp.TCP(sport=self.src_port, dport=self.dst_port, 
                            flags='', seq=self.next_seq) \
+                 / Nonce(nonce=self.get_nonce()) \
                  / (DUMMY_PAYLOAD)
         scp.send(packet, verbose=0)
         self.next_seq += MSS
@@ -77,6 +110,7 @@ class TCP_Client:
         packet = scp.IP(src=self.src_ip, dst=self.dst_ip) \
                  / scp.TCP(sport=self.src_port, dport=self.dst_port, 
                            flags='', seq=self.seq + 1) \
+                 / Nonce(nonce=self.get_nonce()) \
                  / (DUMMY_PAYLOAD)
         self.retransmission_timer = time.time()
         scp.send(packet, verbose=0)
@@ -84,14 +118,16 @@ class TCP_Client:
                  (event, packet[scp.TCP].seq, packet[scp.TCP].seq + MSS - 1) \
                  + cc.ENDC)
 
-    def send_ack(self, ack_no):
+    def send_ack(self, ack_no, nonce):
         # update ack log
         packet = scp.IP(src=self.src_ip, dst=self.dst_ip) \
                  / scp.TCP(sport=self.src_port, dport=self.dst_port, 
-                           flags='A', ack=ack_no) 
+                           flags='A', ack=ack_no) \
+                 / Nonce(reply=nonce)
         scp.send(packet, verbose=0)
         self.ack_log.append((time.time() - self.base_time, ack_no))
         self.xprint(cc.OKBLUE + '(sent) ack ack=%d' % ack_no + cc.ENDC)
+        print nonce
 
     def send_fin(self):
         packet = scp.IP(src=self.src_ip, dst=self.dst_ip) \
@@ -114,12 +150,17 @@ class TCP_Client:
     def post_receive(self, pkt, status):
         # called after a data segment is received
         # subclass overwrites this function to implement attacks
-        self.send_ack(self.ack)
+
+        # extract nonce
+        nonce = pkt[Nonce].nonce
+
+        self.send_ack(self.ack, nonce)
 
     def receive(self):
         if len(self.received_packets) == 0:
             return
         pkt = self.received_packets.popleft()[0]
+        
         # data packet received
         if pkt[scp.TCP].flags == 0:
             # update seq log
@@ -145,6 +186,27 @@ class TCP_Client:
             self.xprint(cc.OKGREEN + '(received) ack ack=:%d' % \
                     (pkt[scp.TCP].ack - 1) \
                     + cc.ENDC)
+
+            # [defense against ACK division]
+            # reject non-aligned acks
+            if (pkt[scp.TCP].ack - 1) % MSS != 0:
+                return
+
+            # [defense against DupACK spoofing and Optimistic ACKing]
+            # reject ACK with invalid nonce
+            if Nonce not in pkt:
+                return
+            nonce_reply = pkt[Nonce].reply
+            nonce_cnt   = self.nonce_pool.get(nonce_reply, 0)
+            if nonce_cnt == 0:
+                return
+            else:
+                # remove nonce from nonce_pool
+                if nonce_cnt == 1:
+                  del self.nonce_pool[nonce_reply]
+                else:
+                  self.nonce_pool[nonce_reply] = nonce_cnt - 1
+
             if pkt[scp.TCP].ack - 1 > self.seq:
                 # new ack
                 self.seq = pkt[scp.TCP].ack - 1
@@ -185,7 +247,14 @@ class TCP_Client:
                     # retransmit missing packet
                     self.resend('triple-ack')
                 elif self.state == "fast_recovery":
-                    self.cwnd += MSS
+                    # [defense against DupACK spoofing]
+                    """
+                    [RFC 5681] Section 3.2
+                        We limit the artificially inflated cwnd to the 
+                    number of outstanding packets. 
+                    """
+                    if (self.cwnd + MSS <= self.next_seq - self.seq - 1):
+                      self.cwnd += MSS
         # fin received
         elif pkt[scp.TCP].flags & 0x1:  # FIN
             self.xprint(cc.OKGREEN + '(received) fin' + cc.ENDC)
