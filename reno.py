@@ -10,7 +10,7 @@ import time
 from color import cc
 
 MSS = 1500
-RETRANSMIT_TIMEOUT = 5.0  # sec
+RETRANSMIT_TIMEOUT = 2.0  # sec
 DUMMY_PAYLOAD = '*' * MSS
 H1_ADDR = '10.0.0.1'
 H1_PORT = 20001
@@ -98,7 +98,11 @@ class TCP_Client:
                  / scp.TCP(sport=self.src_port, dport=self.dst_port,
                            flags='F')
         scp.send(packet, verbose=0)
-        self.xprint(cc.OKBLUE + '(sent) fin limit=%d' % self.limit + cc.ENDC)
+        if self.role == 'sender':
+            msg = 'all data sent'
+        else:
+            msg = 'all data received'
+        self.xprint(cc.OKBLUE + '(sent) fin [%s]' % msg + cc.ENDC)
 
     def timeout(self):
         if self.retransmission_timer is None:
@@ -120,6 +124,7 @@ class TCP_Client:
         if len(self.received_packets) == 0:
             return
         pkt = self.received_packets.popleft()[0]
+        
         # data packet received
         if pkt[scp.TCP].flags == 0:
             # update seq log
@@ -189,7 +194,11 @@ class TCP_Client:
         # fin received
         elif pkt[scp.TCP].flags & 0x1:  # FIN
             self.xprint(cc.OKGREEN + '(received) fin' + cc.ENDC)
-            return 'tear_down'
+            if self.role == 'sender' and self.state == 'fin_sent':
+                return 'tear_down'
+            if self.role == 'receiver':
+                self.send_fin()
+                return 'tear_down'
 
     def log_status(self):
         out = '(control:%s) cwnd=%d, ssthread=%d' % \
@@ -211,14 +220,22 @@ class TCP_Client:
                 self.state = "congestion_avoidance"
             if self.next_seq - self.seq - 1 < self.cwnd:
                 self.send()
-            self.receive()
-            self.timeout()
-            self.log_status()
-
+            if self.receive() == 'tear_down':
+                self.state = 'tear_down'
+                break
+            if self.state != 'fin_sent':
+                self.timeout()
+            
+            # send FIN when data sent over pre-specified limit
             if self.limit and self.seq >= self.limit:
-              self.send_fin()
-              self.state = 'tear_down'
-              break
+                if self.state == 'fin_sent' \
+                    and self.retransmission_timer + RETRANSMIT_TIMEOUT < time.time():
+                    continue
+                self.send_fin()
+                self.retransmission_timer = 0
+                self.state = 'fin_sent'
+            
+            self.log_status()
 
     def start_receiver(self):
         while True:
@@ -237,7 +254,12 @@ class TCP_Client:
                 and pkt[scp.TCP].flags & 0x4 == 0   # ignore RST 
         def queue_packet(pkt):
             self.received_packets.append((pkt, time.time()))
-        scp.sniff(lfilter=match_packet, prn=queue_packet)
+        def stop_packet(pkt):
+            return pkt.haslayer(scp.TCP) \
+                and pkt[scp.TCP].flags & 0x1 != 0   # FIN flag
+        scp.sniff(lfilter=match_packet, 
+                  prn=queue_packet, 
+                  stop_filter=stop_packet)
 
     def write_logs_to_files(self):
         filename = 'attack_log.txt' if self.log_attacker else 'log.txt'
@@ -264,7 +286,7 @@ class TCP_Client:
 
         self.xprint('connection terminated')
         if self.role == 'receiver':
-            self.xprint('writing seq/ack logs to files...')
+            self.xprint('writing seq/ack logs to file ...')
             self.write_logs_to_files()
             self.xprint('writing logs done!')
 
