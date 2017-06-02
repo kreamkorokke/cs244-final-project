@@ -283,12 +283,13 @@ class TCP_Client:
             self.start_sender()
         if self.role == 'receiver':
             self.start_receiver()
-
         self.xprint('connection terminated')
+        
         if self.role == 'receiver':
             self.xprint('writing seq/ack logs to file ...')
             self.write_logs_to_files()
             self.xprint('writing logs done!')
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Naive TCP.")
