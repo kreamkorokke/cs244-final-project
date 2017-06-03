@@ -52,14 +52,13 @@ To run Mininet __for attacks__ (with Mininet default link capacity, sufficiently
 ```
 $ sudo mn --custom mn.py --topo standard --link tc -x
 ```
-
-Run sender on host h1:
-```
-$ python reno.py --role sender --host h1 --verbose
-```
-Run receiver on host h2:
+First, run receiver on host h2:
 ```
 $ python reno.py --role receiver --host h2 --verbose
+```
+Then, run sender on host h1:
+```
+$ python reno.py --role sender --host h1 --verbose
 ```
 You should be able to see the changes of the sender's congestion control state and cwnd in its XTerm output. 
 
@@ -71,6 +70,8 @@ Besides `--role` and `--host`, `reno.py` also provides other flags to customize 
 
 * Use `--rtt` to specify the round-trip delay (in ms). For simplicity, our TCP implementation does not dynamically estimate the retranmission timeout (RTO). It is set to 4 times RTT statically and is default to 2s. Setting `--rtt` will set RTO accordingly, but RTO will not be shorter than 1s.
 
+
+## TCP Reno (with Defense)
 We also implemented several defense mechanisms with a 32-bit nonce. Each TCP segment will be sent with a randomly generated nonce. Each ACK has to reply with one nonce, and the ACK is only valid (for the data sender) if its nonce matches one of the sent segments' nonce. _One nonce is only valid for one ACK._
 
 Run sender/receiver with defense mechanisms (nonce layer) on:
