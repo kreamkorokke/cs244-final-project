@@ -44,11 +44,11 @@ See the section on "Attack Commands" for flags `--num-attack` (equivalent to `--
 ## TCP Reno Client Commands:
 We built our own TCP Client (Reno) with Scapy in Python. To see the attack in live, you can run `reno.py` and `attacker.py` in Mininet XTerms.
 
-To run Mininet with XTerm windows (for TCP sawtooth, with limited link capacity):
+To run Mininet with XTerm windows (__for regular TCP sawtooth__, with limited link capacity):
 ```
 $ sudo mn --custom mn.py --topo congestion --link tc -x
 ```
-for attacks (with Mininet default link capacity, sufficiently large):
+To run Mininet __for attacks__ (with Mininet default link capacity, sufficiently large):
 ```
 $ sudo mn --custom mn.py --topo standard --link tc -x
 ```
@@ -61,13 +61,13 @@ with limit (say, up to 60 kB of data):
 ```
 $ python reno.py --role sender --host h1 --limit 60 --verbose
 ```
-Both clients would tear down the connection when the limit is reached. So that data ping-pang would not go on forever.
+Both clients would tear down the connection when the limit is reached. So that data ping-pong would not go on forever.
 
 Run receiver on host h2:
 ```
 $ python reno.py --role receiver --host h2 --verbose
 ```
-Use `--verbose` to log all sent and received packets in the terminal window. Regardless of this flag, the receiver's SEQ/ACK will be logged to "log.txt" or "log_attack.txt".
+Use `--verbose` to log all sent and received packets in the terminal window. Regardless of this flag, the receiver's SEQ/ACK will be logged to "log.txt" or "log_attack.txt" if the receiver is an attacker.
 
 Use `--rtt` to specify the round-trip delay. For simplicity, our TCP implementation does not dynamically estimate the retranmission timeout (RTO). It is set to 4 times RTT statically and is default to 2s. Setting `--rtt` will set RTO accordingly, but RTO will not be shorter than 1s.
 
@@ -78,11 +78,11 @@ Run sender/receiver with defense mechanisms (nonce layer) on:
 $ python reno_enhanced.py --role sender --host h1 --verbose
 $ python reno_enhanced.py --role receiver --host h2 --verbose
 ```
-You should see no difference in the behavior. But if you try to run any attack against `reno_enhanced.py`, you will get "invalid ACK" all the time and the sender does not blow up its congestion window.
+You should see no difference in the behavior for regular TCP communication, but if you try to run any attack against `reno_enhanced.py`, you will get "invalid ACK" all the time and the sender does not blow up its congestion window.
 
 
 ## Attacker Commands:
-Instead of running `reno.py` in receiver mode, run `attacker.py` to amount receiver attacks.
+Instead of running `reno.py` in receiver mode, run `attacker.py` to mount receiver attacks.
 
 To run ACK Division attacker on host h2:
 ```
