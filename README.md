@@ -100,3 +100,11 @@ $ python attacker.py --attack opt --num 50 --interval 10 --host h2 --verbose
 ```
 
 The parameter `--num` specifies how many divided, spoofed, or optimistic ACKs to send on the first received data segment. The parameter `--interval` specifies the time between two optimistic ACKs in the Optimistic ACKing attack. 
+
+## Plotting the sequence/acknowledge numbers
+After running a regular TCP ping-pong and one of the attacks (div, dup, opt), you can generate the comparison plot for the attack you just ran by executing:
+```
+$ python plot.py --attack THE_ATTACK_NAME_YOU_JUST_RAN (div, dup, opt)
+```
+
+The parameter `--save` saves the plot instead of displaying it, and the parameter `--output` specifies the output directory.
