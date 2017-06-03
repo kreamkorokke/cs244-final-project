@@ -41,7 +41,7 @@ Use `--data-size` to specify the total amount of data to send before tearing dow
 See the section on "Attack Commands" for flags `--num-attack` (equivalent to `--num`) and `--opt-interval` (equivalent to `--interval`).
 
 
-## TCP Reno Client Commands:
+## TCP Reno Client Commands
 We built our own TCP Client (Reno) with Scapy in Python. To see the attack in live, you can run `reno.py` and `attacker.py` in Mininet XTerms.
 
 To run Mininet with XTerm windows (__for regular TCP sawtooth__, with limited link capacity):
@@ -57,19 +57,19 @@ Run sender on host h1:
 ```
 $ python reno.py --role sender --host h1 --verbose
 ```
-with limit (say, up to 60 kB of data):
-```
-$ python reno.py --role sender --host h1 --limit 60 --verbose
-```
-Both clients would tear down the connection when the limit is reached. So that data ping-pong would not go on forever.
-
 Run receiver on host h2:
 ```
 $ python reno.py --role receiver --host h2 --verbose
 ```
-Use `--verbose` to log all sent and received packets in the terminal window. Regardless of this flag, the receiver's SEQ/ACK will be logged to "log.txt" or "log_attack.txt" if the receiver is an attacker.
+You should be able to see the changes of the sender's congestion control state and cwnd in its XTerm output. 
 
-Use `--rtt` to specify the round-trip delay. For simplicity, our TCP implementation does not dynamically estimate the retranmission timeout (RTO). It is set to 4 times RTT statically and is default to 2s. Setting `--rtt` will set RTO accordingly, but RTO will not be shorter than 1s.
+Besides `--role` and `--host`, `reno.py` also provides other flags to customize its behaviour:
+
+* Use `--verbose` to log all sent and received packets in the terminal window. Regardless of this flag, the receiver's SEQ/ACK will be logged to "log.txt" or "log_attack.txt" if the receiver is an attacker.
+
+* Use `--limit` to specify the amount of data the _sender_ would send (in kB). Both clients would tear down the connection when the limit is reached. So that data ping-pong would not go on forever.
+
+* Use `--rtt` to specify the round-trip delay (in ms). For simplicity, our TCP implementation does not dynamically estimate the retranmission timeout (RTO). It is set to 4 times RTT statically and is default to 2s. Setting `--rtt` will set RTO accordingly, but RTO will not be shorter than 1s.
 
 We also implemented several defense mechanisms with a 32-bit nonce. Each TCP segment will be sent with a randomly generated nonce. Each ACK has to reply with one nonce, and the ACK is only valid (for the data sender) if its nonce matches one of the sent segments' nonce. _One nonce is only valid for one ACK._
 
@@ -81,7 +81,7 @@ $ python reno_enhanced.py --role receiver --host h2 --verbose
 You should see no difference in the behavior for regular TCP communication, but if you try to run any attack against `reno_enhanced.py`, you will get "invalid ACK" all the time and the sender does not blow up its congestion window.
 
 
-## Attacker Commands:
+## Attacker Commands
 Instead of running `reno.py` in receiver mode, run `attacker.py` to mount receiver attacks.
 
 To run ACK Division attacker on host h2:
@@ -101,8 +101,9 @@ $ python attacker.py --attack opt --num 50 --interval 10 --host h2 --verbose
 
 The parameter `--num` specifies how many divided, spoofed, or optimistic ACKs to send on the first received data segment. The parameter `--interval` specifies the time between two optimistic ACKs in the Optimistic ACKing attack. 
 
-## Plotting the sequence/acknowledge numbers
-After running a regular TCP ping-pong and one of the attacks (div, dup, opt), you can generate the comparison plot for the attack you just ran by executing:
+
+## Plot the Sequence / Acknowledge Numbers
+After running a regular TCP ping-pong or one of the attacks (div, dup, opt), you can generate the comparison plot for the attack you just ran by executing:
 ```
 $ python plot.py --attack THE_ATTACK_NAME_YOU_JUST_RAN (div, dup, opt)
 ```
