@@ -104,9 +104,15 @@ The parameter `--num` specifies how many divided, spoofed, or optimistic ACKs to
 
 
 ## Plot the Sequence / Acknowledge Numbers
-After running a regular TCP ping-pong or one of the attacks (div, dup, opt), you can generate the comparison plot for the attack you just ran by executing:
+
+After running a regular TCP ping-pong __and__ one of the attacks (div, dup, opt), you can generate the comparison plot for the attack you just ran by executing:
 ```
 $ python plot.py --attack THE_ATTACK_NAME_YOU_JUST_RAN (div, dup, opt)
 ```
+
+A regular run (_reno.py_ versus _reno.py_) outputs `log.txt`. 
+An attack run (_reno.py_ versus _attacker.py_) outputs `attack_log.txt`. 
+__Please rename `attack_log.txt` into `{div, dup, opt}_attack_log.txt` depending on the attack that you have run.__
+`plot.py` requires both `log.txt` and `{div, dup, opt}_attack_log.txt` to function properly, because the plot it generates is a comparison plot.
 
 The parameter `--save` saves the plot instead of displaying it, and the parameter `--output` specifies the output directory.
